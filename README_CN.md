@@ -39,58 +39,76 @@ npm install frida       # 安装 Node.js 绑定
 - **Python 3.x**: 脚本支持。
 - **Node.js**: Frida 的部分组件需要它。
 - **GCC / Clang**: C++ 编译器（MacOS 用户请安装 Xcode 命令行工具）。
+- **Android NDK (r29)**: 如果你要为 Android 编译，必须安装并设置环境变量。
 
-### 2.2 编译命令
-在当前目录下运行：
-
+**设置 NDK 路径示例：**
 ```bash
-make
+export ANDROID_NDK_ROOT=/你的/ndk/路径/29.x.x
 ```
+建议将其添加到 `~/.zshrc` 或 `~/.bash_profile` 中。
 
-如果你想为特定平台编译，可以使用：
-- `make core-macos-apple_silicon` (MacOS ARM芯片)
-- `make core-android-arm64` (安卓 64位)
-- `make core-linux-x86_64` (Linux 64位)
+### 2.2 编译步骤
+现代版本的 Frida 使用“先配置，后编译”的逻辑：
 
-编译过程可能需要较长时间，因为它会拉取相关的子项目。
+1.  **清理旧配置**（如果切换平台）：`rm -rf build`
+2.  **设置 macOS 签名**（防止报错）：`export MACOS_CERTID=-`
+3.  **针对目标平台配置**：
+    - `core-macos-apple_silicon` -> `./configure --host=macos-arm64`
+    - `core-android-arm64` -> `./configure --host=android-arm64`
+4.  **开始编译**：
+    ```bash
+    make
+    ```
 
 ---
 
 ## 3. 编译产物说明
 
-编译完成后，你会在 `build/` 目录下找到不同的产物。以下是它们的主要作用：
+编译完成后，产物通常位于 `build/subprojects/frida-core/` 目录下的对应子目录。
 
-*   **`frida-server`**: 这是最重要的文件。它是一个可执行程序，需要运行在**目标设备**（如你的手机）上。它作为桥梁，接收你电脑发出的指令。
-*   **`frida-gadget`**: 一个共享库（.so 或 .dylib）。在没有 Root 的手机上，或者你只想针对特定的 App 进行插桩时，可以将它打包进 App 内部。
-*   **`frida-agent`**: Frida 的核心库，在插桩时会被自动注入到目标进程中。
-*   **`frida-helper`**: 一个辅助工具，用于处理一些权限较高或特定的注入操作。
+*   **`frida-server`**: 运行在目标设备（如手机）上的服务端。路径示例：`build/subprojects/frida-core/server/frida-server`。
+*   **`frida-gadget`**: 共享库，用于非 Root 注入。
+*   **`frida-agent`**: Frida 核心库，注入到进程中。
 
 ---
 
 ## 4. 安装指南（以 Android 为例）
 
-如果你编译或下载了 `frida-server`，按照以下步骤将其安装到安卓手机：
-
-1.  **连接手机**：确保开启了“USB 调试”。
-2.  **上传文件**：
+1.  **推送到手机**：
     ```bash
-    adb push build/frida-android-arm64/bin/frida-server /data/local/tmp/
+    adb push build/subprojects/frida-core/server/frida-server /data/local/tmp/
     ```
-3.  **修改权限**：
+2.  **设置权限**：
     ```bash
     adb shell "chmod +x /data/local/tmp/frida-server"
     ```
-4.  **运行服务端**：
+3.  **以 Root 权限运行**：
     ```bash
-    adb shell "/data/local/tmp/frida-server &"
+    adb shell "su -c '/data/local/tmp/frida-server &'"
     ```
-
-> [!TIP]
-> 运行后，`frida-server` 会在手机后台静默运行，不会有输出界面。
+    > [!IMPORTANT]
+    > 必须使用 `su -c` 运行，否则会因为权限不足（如 SELinux）导致无法注入进程。
 
 ---
 
-## 5. 如何使用 Frida
+## 5. 常见问题排查
+
+### 5.1 Address already in use
+如果你看到 `Error binding to address: Address already in use`，说明已经有一个 frida-server 在运行。
+**解决方法**：
+```bash
+adb shell "su -c 'pkill -9 frida-server'"
+```
+
+### 5.2 缺少 Python 模块 (setuptools/wheel)
+如果在编译时提示找不到模块，请安装它们并添加强制标志：
+```bash
+python3 -m pip install setuptools wheel --break-system-packages
+```
+
+---
+
+## 6. 如何使用 Frida
 
 一旦手机上的 `frida-server` 跑起来了，你就可以在你的电脑（主机）上使用 Frida 工具了。
 
